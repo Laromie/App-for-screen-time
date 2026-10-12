@@ -87,7 +87,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return UiState(
             loaded = true,
             hasUsageAccess = usage.hasPermission(),
-            hasAccessibility = BlockerService.isEnabled(getApplication()),
+            hasAccessibility = BlockerService.isEnabled(getApplication<Application>()),
             today = week.lastOrNull(),
             week = week,
             apps = apps,
