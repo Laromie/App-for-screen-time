@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Росток</string>
+    <string name="accessibility_description">Росток видит только то, какое приложение сейчас открыто, чтобы показать паузу перед соцсетями и соблюдать твои лимиты. Содержимое экрана не читается и никуда не отправляется.</string>
+</resources>

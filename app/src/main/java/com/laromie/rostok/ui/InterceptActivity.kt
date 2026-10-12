@@ -1,0 +1,320 @@
+package com.laromie.rostok.ui
+
+import android.content.Context
+import android.content.Intent
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.laromie.rostok.data.AppCatalog
+import com.laromie.rostok.data.Prefs
+import com.laromie.rostok.data.Rewards
+import com.laromie.rostok.data.TimeUtils
+import com.laromie.rostok.data.UsageRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+
+/** Экран, который встаёт между пользователем и отвлекающим приложением. */
+class InterceptActivity : ComponentActivity() {
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        val pkg = intent.getStringExtra(EXTRA_PACKAGE) ?: return finish()
+        val mode = intent.getStringExtra(EXTRA_MODE) ?: MODE_PAUSE
+
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() = goHome()
+        })
+
+        val prefs = Prefs(this)
+        val usage = UsageRepository(this)
+        val rewards = Rewards(prefs, usage)
+        val label = AppCatalog(this).label(pkg)
+
+        setContent {
+            RostokTheme {
+                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    when (mode) {
+                        MODE_LIMIT -> LimitScreen(
+                            label = label,
+                            limitMinutes = prefs.limitMinutes(pkg) + prefs.bonusMinutesToday(pkg),
+                            points = prefs.points,
+                            onClose = ::goHome,
+                            onBuy = {
+                                if (rewards.buyExtraTime(pkg, label)) {
+                                    prefs.setUnlockUntil(
+                                        pkg,
+                                        System.currentTimeMillis() + Rewards.EXTRA_TIME_MINUTES * TimeUtils.MINUTE,
+                                    )
+                                    finish()
+                                }
+                            },
+                        )
+
+                        MODE_FOCUS -> FocusBlockScreen(
+                            label = label,
+                            focusUntil = prefs.focusUntil,
+                            onClose = ::goHome,
+                        )
+
+                        else -> PauseScreen(
+                            label = label,
+                            pauseSeconds = prefs.pauseSeconds,
+                            loadStats = {
+                                withContext(Dispatchers.IO) {
+                                    usage.today().let { it.opensFor(pkg) to it.timeFor(pkg) }
+                                }
+                            },
+                            onResist = {
+                                rewards.onResist(label)
+                                goHome()
+                            },
+                            onOpen = { minutes ->
+                                prefs.setUnlockUntil(pkg, System.currentTimeMillis() + minutes * TimeUtils.MINUTE)
+                                finish()
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun goHome() {
+        startActivity(
+            Intent(Intent.ACTION_MAIN)
+                .addCategory(Intent.CATEGORY_HOME)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+        finish()
+    }
+
+    companion object {
+        const val MODE_PAUSE = "pause"
+        const val MODE_LIMIT = "limit"
+        const val MODE_FOCUS = "focus"
+        private const val EXTRA_PACKAGE = "pkg"
+        private const val EXTRA_MODE = "mode"
+
+        fun intent(context: Context, pkg: String, mode: String): Intent =
+            Intent(context, InterceptActivity::class.java)
+                .putExtra(EXTRA_PACKAGE, pkg)
+                .putExtra(EXTRA_MODE, mode)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+    }
+}
+
+@Composable
+private fun PauseScreen(
+    label: String,
+    pauseSeconds: Int,
+    loadStats: suspend () -> Pair<Int, Long>,
+    onResist: () -> Unit,
+    onOpen: (minutes: Int) -> Unit,
+) {
+    var secondsLeft by remember { mutableIntStateOf(pauseSeconds) }
+    var stats by remember { mutableStateOf<Pair<Int, Long>?>(null) }
+    LaunchedEffect(Unit) { stats = loadStats() }
+    LaunchedEffect(Unit) {
+        while (secondsLeft > 0) {
+            delay(1000)
+            secondsLeft--
+        }
+    }
+
+    // Вдох 4 секунды — выдох 4 секунды.
+    val breath = rememberInfiniteTransition(label = "breath")
+    val scale by breath.animateFloat(
+        initialValue = 0.6f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(4000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "scale",
+    )
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .safeDrawingPadding()
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Spacer(Modifier.weight(1f))
+        Box(Modifier.size(200.dp), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier
+                    .size(200.dp)
+                    .scale(scale)
+                    .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
+            )
+            Text(
+                if (secondsLeft > 0) "$secondsLeft" else "🌱",
+                fontSize = 48.sp,
+                fontWeight = FontWeight.Light,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+        }
+        Spacer(Modifier.height(32.dp))
+        Text(
+            if (secondsLeft > 0) "Сделай медленный вдох…" else "Ты правда хочешь открыть $label?",
+            style = MaterialTheme.typography.headlineSmall,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(12.dp))
+        stats?.let { (opens, time) ->
+            Text(
+                "Сегодня: открыто $opens раз, ${TimeUtils.formatDuration(time)}",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+        }
+        Spacer(Modifier.weight(1f))
+
+        Button(onClick = onResist, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+            Text("Не буду открывать  +${Rewards.RESIST_POINTS} 🌱", fontSize = 16.sp)
+        }
+        Spacer(Modifier.height(12.dp))
+        if (secondsLeft == 0) {
+            Text(
+                "Открыть на:",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(2, 5, 15).forEach { m ->
+                    OutlinedButton(onClick = { onOpen(m) }) { Text("$m мин") }
+                }
+            }
+        } else {
+            // Место под кнопки, чтобы интерфейс не прыгал.
+            Spacer(Modifier.height(68.dp))
+        }
+    }
+}
+
+@Composable
+private fun LimitScreen(
+    label: String,
+    limitMinutes: Int,
+    points: Int,
+    onClose: () -> Unit,
+    onBuy: () -> Unit,
+) {
+    BlockLayout(
+        emoji = "⏳",
+        title = "Лимит на $label исчерпан",
+        text = "Сегодня ты уже провёл здесь ${TimeUtils.formatMinutes(limitMinutes)}. " +
+            "Завтра лимит обновится — а сейчас можно заняться чем-то другим.",
+        onClose = onClose,
+    ) {
+        if (points >= Rewards.EXTRA_TIME_COST) {
+            TextButton(onClick = onBuy) {
+                Text("Ещё ${Rewards.EXTRA_TIME_MINUTES} мин за ${Rewards.EXTRA_TIME_COST} 🌱 (у тебя $points)")
+            }
+        } else {
+            Text(
+                "Нужно ${Rewards.EXTRA_TIME_COST} 🌱, чтобы купить ещё ${Rewards.EXTRA_TIME_MINUTES} мин (у тебя $points)",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+@Composable
+private fun FocusBlockScreen(label: String, focusUntil: Long, onClose: () -> Unit) {
+    var left by remember { mutableStateOf(focusUntil - System.currentTimeMillis()) }
+    LaunchedEffect(focusUntil) {
+        while (left > 0) {
+            delay(1000)
+            left = focusUntil - System.currentTimeMillis()
+        }
+    }
+    val min = (left.coerceAtLeast(0) / 60_000)
+    val sec = (left.coerceAtLeast(0) / 1000) % 60
+    BlockLayout(
+        emoji = "🎯",
+        title = "Сейчас режим фокуса",
+        text = "$label подождёт. До конца фокуса ${"%d:%02d".format(min, sec)}.",
+        onClose = onClose,
+    ) {}
+}
+
+@Composable
+private fun BlockLayout(
+    emoji: String,
+    title: String,
+    text: String,
+    onClose: () -> Unit,
+    extra: @Composable () -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .safeDrawingPadding()
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Spacer(Modifier.weight(1f))
+        Text(emoji, fontSize = 72.sp)
+        Spacer(Modifier.height(24.dp))
+        Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.weight(1f))
+        Button(onClick = onClose, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+            Text("Закрыть", fontSize = 16.sp)
+        }
+        Spacer(Modifier.height(8.dp))
+        extra()
+    }
+}
