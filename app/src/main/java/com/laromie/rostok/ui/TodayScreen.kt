@@ -1,6 +1,7 @@
 package com.laromie.rostok.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -27,6 +28,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.laromie.rostok.data.AppCatalog
 import com.laromie.rostok.data.AppUsage
+import com.laromie.rostok.data.Prep
 import com.laromie.rostok.data.TimeUtils
 
 @Composable
@@ -35,6 +37,7 @@ fun TodayScreen(
     catalog: AppCatalog,
     onOpenUsageAccess: () -> Unit,
     onOpenAccessibility: () -> Unit,
+    onOpenPrep: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -70,6 +73,7 @@ fun TodayScreen(
 
         val today = state.today
         item { TodaySummary(state) }
+        item { PrepTeaser(state, onOpenPrep) }
         if (state.week.isNotEmpty()) {
             item { WeekChart(state) }
         }
@@ -231,6 +235,36 @@ private fun AppUsageRow(
                 },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/** Ближайший экзамен или приглашение включить режим подготовки. */
+@Composable
+private fun PrepTeaser(state: UiState, onOpen: () -> Unit) {
+    val prep = state.prep
+    val next = prep?.nearest()
+    SectionCard(
+        modifier = Modifier.clickable(onClick = onOpen),
+        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+    ) {
+        if (next == null) {
+            Text("📚 Готовишься к ЕГЭ, ОГЭ или сессии?", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Включи режим подготовки: обратный отсчёт, учёт занятий и свои рамки для соцсетей.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        } else {
+            val done = state.prepMinutes[next.id] ?: 0
+            Text(
+                "${next.name} — ${Prep.whenText(Prep.daysUntil(next.date))}",
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                "Подготовка ${TimeUtils.formatMinutes(done)} из ${TimeUtils.formatMinutes(next.targetMinutes)} · " +
+                    "сегодня ${TimeUtils.formatMinutes(state.studyTodayMinutes)}",
+                style = MaterialTheme.typography.bodyMedium,
             )
         }
     }

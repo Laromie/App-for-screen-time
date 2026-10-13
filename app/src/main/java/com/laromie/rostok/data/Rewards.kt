@@ -91,15 +91,23 @@ class Rewards(private val prefs: Prefs, private val usage: UsageRepository) {
     }
 
     /** Начисляет награду за фокус-сессию, если она закончилась сама. */
-    fun checkFocusCompletion() {
+    fun checkFocusCompletion(subject: String? = null) {
         val started = prefs.focusStartedAt
         val until = prefs.focusUntil
         if (started == 0L || until > System.currentTimeMillis()) return
         val minutes = ((until - started) / TimeUtils.MINUTE).toInt()
         prefs.focusStartedAt = 0
         prefs.focusSessionsDone += 1
-        earn(maxOf(5, minutes / 2), "Фокус ${TimeUtils.formatMinutes(minutes)} завершён")
+        val what = if (subject != null) "Занятие «$subject»" else "Фокус"
+        earn(maxOf(5, minutes / 2), "$what ${TimeUtils.formatMinutes(minutes)} завершено")
         checkAchievements()
+    }
+
+    /** Списать очки (но не ниже нуля) и записать причину в историю. */
+    fun penalty(points: Int, reason: String) {
+        val taken = minOf(points, prefs.points)
+        prefs.points -= taken
+        addHistory(-taken, reason)
     }
 
     /** Купить дополнительные минуты к исчерпанному лимиту. */

@@ -11,6 +11,11 @@ import com.laromie.rostok.data.DayUsage
 import com.laromie.rostok.data.HistoryEntry
 import com.laromie.rostok.data.InstalledApp
 import com.laromie.rostok.data.PlantStage
+import com.laromie.rostok.data.Prep
+import com.laromie.rostok.data.PrepItem
+import com.laromie.rostok.data.PrepRepository
+import com.laromie.rostok.data.Study
+import com.laromie.rostok.data.TimeUtils
 import com.laromie.rostok.data.Prefs
 import com.laromie.rostok.data.Rewards
 import com.laromie.rostok.data.UsageRepository
@@ -41,6 +46,12 @@ data class UiState(
     val nextStage: PlantStage? = null,
     val achievements: Set<String> = emptySet(),
     val history: List<HistoryEntry> = emptyList(),
+    // Режим подготовки
+    val prep: Prep? = null,
+    val prepMinutes: Map<String, Int> = emptyMap(),
+    val studyTodayMinutes: Int = 0,
+    val studyWeekMinutes: Int = 0,
+    val activeItemId: String? = null,
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -49,6 +60,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val usage = UsageRepository(app)
     val catalog = AppCatalog(app)
     private val rewards = Rewards(prefs, usage)
+    private val prepRepo = PrepRepository(app)
+    private val study = Study(prefs, rewards, prepRepo)
 
     var state by mutableStateOf(UiState())
         private set
@@ -68,7 +81,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val fresh = withContext(Dispatchers.IO) {
                 rewards.evaluatePastDays()
-                rewards.checkFocusCompletion()
+                study.checkCompletion()
                 val apps = if (state.apps.isEmpty()) catalog.launchableApps() else state.apps
                 val week = usage.lastDays(7)
                 buildState(apps, week)
@@ -84,6 +97,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun buildState(apps: List<InstalledApp>, week: List<DayUsage>): UiState {
         val tracked = prefs.trackedApps
+        val prep = prepRepo.load()
         return UiState(
             loaded = true,
             hasUsageAccess = usage.hasPermission(),
@@ -106,6 +120,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             nextStage = rewards.nextStage(),
             achievements = prefs.achievements,
             history = rewards.history(),
+            prep = prep,
+            prepMinutes = prep?.items?.associate { it.id to study.minutesFor(it.id) } ?: emptyMap(),
+            studyTodayMinutes = study.minutesSince(TimeUtils.startOfToday()),
+            studyWeekMinutes = study.minutesSince(TimeUtils.startOfToday() - 6 * TimeUtils.DAY),
+            activeItemId = prepRepo.activeItemId,
         )
     }
 
@@ -143,13 +162,42 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun cancelFocus() {
-        rewards.cancelFocus()
+        // Если это было занятие по предмету, засчитываем уже потраченное время.
+        if (prepRepo.activeItemId != null) study.stopEarly() else rewards.cancelFocus()
         refreshPrefs()
     }
 
     /** Вызывается из таймера на экране, когда фокус закончился. */
     fun onFocusFinished() {
-        rewards.checkFocusCompletion()
+        study.checkCompletion()
+        refreshPrefs()
+    }
+
+    // ---------- Режим подготовки ----------
+
+    fun savePrep(prep: Prep) {
+        prepRepo.save(prep)
+        refreshPrefs()
+    }
+
+    fun deletePrep() {
+        if (prepRepo.activeItemId != null) study.stopEarly()
+        prepRepo.delete()
+        refreshPrefs()
+    }
+
+    fun setPassed(itemId: String, passed: Boolean) {
+        prepRepo.setPassed(itemId, passed)
+        refreshPrefs()
+    }
+
+    fun startStudy(item: PrepItem, minutes: Int) {
+        study.start(item, minutes)
+        refreshPrefs()
+    }
+
+    fun stopStudy() {
+        study.stopEarly()
         refreshPrefs()
     }
 }

@@ -26,9 +26,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -48,12 +52,26 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.laromie.rostok.data.AppCatalog
 import com.laromie.rostok.data.Prefs
+import com.laromie.rostok.data.Prep
+import com.laromie.rostok.data.PrepItem
+import com.laromie.rostok.data.PrepRepository
 import com.laromie.rostok.data.Rewards
+import com.laromie.rostok.data.Strictness
+import com.laromie.rostok.data.Study
 import com.laromie.rostok.data.TimeUtils
 import com.laromie.rostok.data.UsageRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+
+/** Напоминание о ближайшем экзамене для экранов паузы и блокировки. */
+private data class PrepHint(
+    val item: PrepItem,
+    val daysLeft: Int,
+    val doneMinutes: Int,
+    val strictness: Strictness,
+    val studyTime: Boolean,
+)
 
 /** Экран, который встаёт между пользователем и отвлекающим приложением. */
 class InterceptActivity : ComponentActivity() {
@@ -71,7 +89,30 @@ class InterceptActivity : ComponentActivity() {
         val prefs = Prefs(this)
         val usage = UsageRepository(this)
         val rewards = Rewards(prefs, usage)
+        val prepRepo = PrepRepository(this)
+        val study = Study(prefs, rewards, prepRepo)
         val label = AppCatalog(this).label(pkg)
+
+        val prep = prepRepo.load()
+        val hint = prep?.nearest()?.let { item ->
+            PrepHint(
+                item = item,
+                daysLeft = Prep.daysUntil(item.date),
+                doneMinutes = study.minutesFor(item.id),
+                strictness = prep.strictness,
+                studyTime = prep.isStudyTime(),
+            )
+        }
+
+        val startStudy: (PrepItem) -> Unit = { item ->
+            study.start(item, STUDY_FROM_PAUSE_MINUTES)
+            startActivity(MainActivity.prepIntent(this))
+            finish()
+        }
+        val emergency: () -> Unit = {
+            study.emergencyUnlock(pkg, label)
+            finish()
+        }
 
         setContent {
             RostokTheme {
@@ -96,26 +137,58 @@ class InterceptActivity : ComponentActivity() {
                         MODE_FOCUS -> FocusBlockScreen(
                             label = label,
                             focusUntil = prefs.focusUntil,
+                            subject = prepRepo.activeItemId?.let { id -> prep?.items?.firstOrNull { it.id == id }?.name },
                             onClose = ::goHome,
                         )
 
-                        else -> PauseScreen(
-                            label = label,
-                            pauseSeconds = prefs.pauseSeconds,
-                            loadStats = {
-                                withContext(Dispatchers.IO) {
-                                    usage.today().let { it.opensFor(pkg) to it.timeFor(pkg) }
+                        MODE_STUDY -> BlockLayout(
+                            emoji = "📚",
+                            title = "Сейчас учебное время",
+                            text = hint?.let { "${it.item.name} ${Prep.whenText(it.daysLeft)}. $label подождёт до конца учебных часов." }
+                                ?: "$label подождёт до конца учебных часов.",
+                            onClose = ::goHome,
+                        ) {
+                            hint?.let { h ->
+                                FilledTonalButton(onClick = { startStudy(h.item) }, modifier = Modifier.fillMaxWidth()) {
+                                    Text("📖 Заниматься: ${h.item.name}")
                                 }
-                            },
-                            onResist = {
-                                rewards.onResist(label)
-                                goHome()
-                            },
-                            onOpen = { minutes ->
-                                prefs.setUnlockUntil(pkg, System.currentTimeMillis() + minutes * TimeUtils.MINUTE)
-                                finish()
-                            },
-                        )
+                            }
+                            EmergencyExit(onConfirm = emergency)
+                        }
+
+                        MODE_SLEEP -> BlockLayout(
+                            emoji = "🌙",
+                            title = "Пора спать",
+                            text = hint?.let { "${it.item.name} ${Prep.whenText(it.daysLeft)}. Выспаться сейчас полезнее, чем листать ленту." }
+                                ?: "Завтра важный день. Выспаться сейчас полезнее, чем листать ленту.",
+                            onClose = ::goHome,
+                        ) {
+                            EmergencyExit(onConfirm = emergency)
+                        }
+
+                        else -> {
+                            val serious = hint != null && hint.studyTime && hint.strictness == Strictness.SERIOUS
+                            PauseScreen(
+                                label = label,
+                                pauseSeconds = if (serious) maxOf(prefs.pauseSeconds, SERIOUS_PAUSE_SECONDS) else prefs.pauseSeconds,
+                                openOptions = if (serious) listOf(SERIOUS_UNLOCK_MINUTES) else listOf(2, 5, 15),
+                                hint = hint,
+                                loadStats = {
+                                    withContext(Dispatchers.IO) {
+                                        usage.today().let { it.opensFor(pkg) to it.timeFor(pkg) }
+                                    }
+                                },
+                                onStudy = startStudy,
+                                onResist = {
+                                    rewards.onResist(label)
+                                    goHome()
+                                },
+                                onOpen = { minutes ->
+                                    prefs.setUnlockUntil(pkg, System.currentTimeMillis() + minutes * TimeUtils.MINUTE)
+                                    finish()
+                                },
+                            )
+                        }
                     }
                 }
             }
@@ -135,8 +208,13 @@ class InterceptActivity : ComponentActivity() {
         const val MODE_PAUSE = "pause"
         const val MODE_LIMIT = "limit"
         const val MODE_FOCUS = "focus"
+        const val MODE_STUDY = "study"
+        const val MODE_SLEEP = "sleep"
         private const val EXTRA_PACKAGE = "pkg"
         private const val EXTRA_MODE = "mode"
+        private const val STUDY_FROM_PAUSE_MINUTES = 25
+        private const val SERIOUS_PAUSE_SECONDS = 30
+        private const val SERIOUS_UNLOCK_MINUTES = 2
 
         fun intent(context: Context, pkg: String, mode: String): Intent =
             Intent(context, InterceptActivity::class.java)
@@ -150,7 +228,10 @@ class InterceptActivity : ComponentActivity() {
 private fun PauseScreen(
     label: String,
     pauseSeconds: Int,
+    openOptions: List<Int>,
+    hint: PrepHint?,
     loadStats: suspend () -> Pair<Int, Long>,
+    onStudy: (PrepItem) -> Unit,
     onResist: () -> Unit,
     onOpen: (minutes: Int) -> Unit,
 ) {
@@ -181,10 +262,10 @@ private fun PauseScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Spacer(Modifier.weight(1f))
-        Box(Modifier.size(200.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(180.dp), contentAlignment = Alignment.Center) {
             Box(
                 Modifier
-                    .size(200.dp)
+                    .size(180.dp)
                     .scale(scale)
                     .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
             )
@@ -195,25 +276,43 @@ private fun PauseScreen(
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
             )
         }
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(24.dp))
         Text(
-            if (secondsLeft > 0) "Сделай медленный вдох…" else "Ты правда хочешь открыть $label?",
+            when {
+                secondsLeft > 0 -> "Сделай медленный вдох…"
+                hint != null -> "Открыть $label или позаниматься?"
+                else -> "Ты правда хочешь открыть $label?"
+            },
             style = MaterialTheme.typography.headlineSmall,
             textAlign = TextAlign.Center,
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(8.dp))
         stats?.let { (opens, time) ->
             Text(
                 "Сегодня: открыто $opens раз, ${TimeUtils.formatDuration(time)}",
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
         }
+        hint?.let {
+            Spacer(Modifier.height(16.dp))
+            PrepHintCard(it)
+        }
         Spacer(Modifier.weight(1f))
 
-        Button(onClick = onResist, modifier = Modifier.fillMaxWidth().height(56.dp)) {
-            Text("Не буду открывать  +${Rewards.RESIST_POINTS} 🌱", fontSize = 16.sp)
+        if (hint != null) {
+            Button(onClick = { onStudy(hint.item) }, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+                Text("📖 Заниматься 25 мин: ${hint.item.name}", maxLines = 1)
+            }
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = onResist, modifier = Modifier.fillMaxWidth()) {
+                Text("Просто не открывать  +${Rewards.RESIST_POINTS} 🌱")
+            }
+        } else {
+            Button(onClick = onResist, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+                Text("Не буду открывать  +${Rewards.RESIST_POINTS} 🌱", fontSize = 16.sp)
+            }
         }
         Spacer(Modifier.height(12.dp))
         if (secondsLeft == 0) {
@@ -224,14 +323,38 @@ private fun PauseScreen(
             )
             Spacer(Modifier.height(4.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(2, 5, 15).forEach { m ->
-                    OutlinedButton(onClick = { onOpen(m) }) { Text("$m мин") }
+                openOptions.forEach { m ->
+                    TextButton(onClick = { onOpen(m) }) { Text("$m мин") }
                 }
             }
         } else {
             // Место под кнопки, чтобы интерфейс не прыгал.
             Spacer(Modifier.height(68.dp))
         }
+    }
+}
+
+@Composable
+private fun PrepHintCard(hint: PrepHint) {
+    val target = hint.item.targetMinutes.coerceAtLeast(1)
+    SectionCard(containerColor = MaterialTheme.colorScheme.secondaryContainer) {
+        Text(
+            "${hint.item.name} — ${Prep.whenText(hint.daysLeft)}",
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Spacer(Modifier.height(6.dp))
+        LinearProgressIndicator(
+            progress = { (hint.doneMinutes.toFloat() / target).coerceIn(0f, 1f) },
+            modifier = Modifier.fillMaxWidth(),
+            drawStopIndicator = {},
+        )
+        val left = (target - hint.doneMinutes).coerceAtLeast(0)
+        Text(
+            "Подготовка: ${TimeUtils.formatMinutes(hint.doneMinutes)} из ${TimeUtils.formatMinutes(target)}" +
+                if (left > 0) " · осталось ${TimeUtils.formatMinutes(left)}" else " · цель выполнена 🎉",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 4.dp),
+        )
     }
 }
 
@@ -266,7 +389,7 @@ private fun LimitScreen(
 }
 
 @Composable
-private fun FocusBlockScreen(label: String, focusUntil: Long, onClose: () -> Unit) {
+private fun FocusBlockScreen(label: String, focusUntil: Long, subject: String?, onClose: () -> Unit) {
     var left by remember { mutableStateOf(focusUntil - System.currentTimeMillis()) }
     LaunchedEffect(focusUntil) {
         while (left > 0) {
@@ -278,10 +401,50 @@ private fun FocusBlockScreen(label: String, focusUntil: Long, onClose: () -> Uni
     val sec = (left.coerceAtLeast(0) / 1000) % 60
     BlockLayout(
         emoji = "🎯",
-        title = "Сейчас режим фокуса",
-        text = "$label подождёт. До конца фокуса ${"%d:%02d".format(min, sec)}.",
+        title = if (subject != null) "Идёт занятие: $subject" else "Сейчас режим фокуса",
+        text = "$label подождёт. До конца ${"%d:%02d".format(min, sec)}.",
         onClose = onClose,
     ) {}
+}
+
+/** Аварийный выход: нужно напечатать фразу и подождать — чтобы не сдаваться на автомате. */
+@Composable
+private fun EmergencyExit(onConfirm: () -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    TextButton(onClick = { open = true }) {
+        Text("Мне правда нужно", color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    if (!open) return
+
+    var text by remember { mutableStateOf("") }
+    var wait by remember { mutableIntStateOf(Study.EMERGENCY_WAIT_SECONDS) }
+    LaunchedEffect(Unit) {
+        while (wait > 0) {
+            delay(1000)
+            wait--
+        }
+    }
+    val phraseOk = text.trim().lowercase() == Study.EMERGENCY_PHRASE
+    AlertDialog(
+        onDismissRequest = { open = false },
+        title = { Text("Аварийный выход") },
+        text = {
+            Column {
+                Text(
+                    "Откроется на ${Study.EMERGENCY_MINUTES} мин и спишет ${Study.EMERGENCY_COST} 🌱. " +
+                        "Чтобы продолжить, напиши: «${Study.EMERGENCY_PHRASE}»",
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(value = text, onValueChange = { text = it }, singleLine = true)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm, enabled = phraseOk && wait == 0) {
+                Text(if (wait > 0) "Подожди $wait с" else "Открыть")
+            }
+        },
+        dismissButton = { TextButton(onClick = { open = false }) { Text("Я передумал") } },
+    )
 }
 
 @Composable

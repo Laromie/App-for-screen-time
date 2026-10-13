@@ -9,6 +9,8 @@ import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
 import android.view.inputmethod.InputMethodManager
 import com.laromie.rostok.data.Prefs
+import com.laromie.rostok.data.PrepRepository
+import com.laromie.rostok.data.Strictness
 import com.laromie.rostok.data.TimeUtils
 import com.laromie.rostok.data.UsageRepository
 import com.laromie.rostok.ui.InterceptActivity
@@ -16,13 +18,14 @@ import java.util.concurrent.Executors
 
 /**
  * Следит только за тем, какое приложение сейчас на экране.
- * Для отвлекающих приложений показывает паузу, а при исчерпанном лимите
- * или во время фокуса — экран блокировки.
+ * Для отвлекающих приложений показывает паузу, а при исчерпанном лимите,
+ * во время фокуса, в жёстком учебном режиме или ночью перед экзаменом — экран блокировки.
  */
 class BlockerService : AccessibilityService() {
 
     private lateinit var prefs: Prefs
     private lateinit var usage: UsageRepository
+    private lateinit var prepRepo: PrepRepository
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
 
@@ -42,6 +45,7 @@ class BlockerService : AccessibilityService() {
         super.onServiceConnected()
         prefs = Prefs(this)
         usage = UsageRepository(this)
+        prepRepo = PrepRepository(this)
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
         keyboardPackages = imm.enabledInputMethodList.map { it.packageName }.toSet()
         main.postDelayed(periodicCheck, CHECK_INTERVAL_MS)
@@ -78,14 +82,26 @@ class BlockerService : AccessibilityService() {
         val now = System.currentTimeMillis()
         if (prefs.isFocusActive(now)) return InterceptActivity.MODE_FOCUS
 
+        val unlocked = prefs.unlockUntil(pkg) > now
+        val prep = prepRepo.load()?.takeIf { it.nearest() != null && pkg !in it.exceptions }
+        val studyTime = prep?.isStudyTime(now) == true
+
+        if (prep != null && prep.isSleepTime(now)) {
+            return if (unlocked) null else InterceptActivity.MODE_SLEEP
+        }
+        if (studyTime && prep?.strictness == Strictness.HARD) {
+            return if (unlocked) null else InterceptActivity.MODE_STUDY
+        }
+
         val limit = prefs.limitMinutes(pkg)
         if (limit > 0) {
             val allowedMs = (limit + prefs.bonusMinutesToday(pkg)) * TimeUtils.MINUTE
             if (usage.today().timeFor(pkg) >= allowedMs) return InterceptActivity.MODE_LIMIT
         }
 
-        if (!prefs.pauseEnabled) return null
-        return if (prefs.unlockUntil(pkg) > now) null else InterceptActivity.MODE_PAUSE
+        // В учебные часы пауза включена всегда, даже если в настройках её выключили.
+        if (!prefs.pauseEnabled && !studyTime) return null
+        return if (unlocked) null else InterceptActivity.MODE_PAUSE
     }
 
     private fun launchIntercept(pkg: String, mode: String) {
