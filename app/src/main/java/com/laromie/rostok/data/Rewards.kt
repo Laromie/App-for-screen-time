@@ -3,6 +3,32 @@ package com.laromie.rostok.data
 /** Стадия растения, которое растёт от заработанных очков. */
 data class PlantStage(val minPoints: Int, val emoji: String, val name: String)
 
+/** Кого растить за очки. Пороги очков у всех стилей одинаковые. */
+enum class RewardStyle(val emoji: String, val title: String, private val stages: List<Pair<String, String>>) {
+    PLANT(
+        "🌱", "Растение", listOf(
+            "🌰" to "Семечко", "🌱" to "Росток", "🌿" to "Побег", "🪴" to "Кустик",
+            "🌳" to "Деревце", "🌲" to "Крепкое дерево", "🌸" to "Цветущее дерево", "🍎" to "Плодовый сад",
+        )
+    ),
+    DRAGON(
+        "🐉", "Дракон", listOf(
+            "🥚" to "Загадочное яйцо", "🐣" to "Вылупился", "🦎" to "Ящерка", "🐊" to "Зубастик",
+            "🐲" to "Дракончик", "🐉" to "Дракон", "🔥" to "Огненный дракон", "👑" to "Король драконов",
+        )
+    ),
+    SPACE(
+        "🚀", "Космос", listOf(
+            "🪨" to "Камешек", "🛰️" to "Спутник", "🚀" to "Ракета", "🌙" to "Луна",
+            "🌍" to "Планета", "🪐" to "Газовый гигант", "⭐" to "Звезда", "🌌" to "Галактика",
+        )
+    );
+
+    fun stages(): List<PlantStage> = stages.mapIndexed { i, (emoji, name) ->
+        PlantStage(Rewards.STAGE_POINTS[i], emoji, name)
+    }
+}
+
 data class Achievement(
     val id: String,
     val emoji: String,
@@ -119,9 +145,9 @@ class Rewards(private val prefs: Prefs, private val usage: UsageRepository) {
         return true
     }
 
-    fun plantStage(): PlantStage = STAGES.last { prefs.totalEarned >= it.minPoints }
+    fun plantStage(): PlantStage = prefs.rewardStyle.stages().last { prefs.totalEarned >= it.minPoints }
 
-    fun nextStage(): PlantStage? = STAGES.firstOrNull { it.minPoints > prefs.totalEarned }
+    fun nextStage(): PlantStage? = prefs.rewardStyle.stages().firstOrNull { it.minPoints > prefs.totalEarned }
 
     fun history(): List<HistoryEntry> = prefs.historyRaw.lineSequence()
         .filter { it.isNotBlank() }
@@ -173,16 +199,7 @@ class Rewards(private val prefs: Prefs, private val usage: UsageRepository) {
         const val ACHIEVEMENT_POINTS = 10
         private const val MAX_HISTORY = 40
 
-        val STAGES = listOf(
-            PlantStage(0, "🌰", "Семечко"),
-            PlantStage(30, "🌱", "Росток"),
-            PlantStage(120, "🌿", "Побег"),
-            PlantStage(300, "🪴", "Кустик"),
-            PlantStage(600, "🌳", "Деревце"),
-            PlantStage(1200, "🌲", "Крепкое дерево"),
-            PlantStage(2500, "🌸", "Цветущее дерево"),
-            PlantStage(5000, "🍎", "Плодовый сад"),
-        )
+        val STAGE_POINTS = listOf(0, 30, 120, 300, 600, 1200, 2500, 5000)
 
         val ACHIEVEMENTS = listOf(
             Achievement("first_resist", "✋", "Первый отказ", "Не открыл соцсеть после паузы"),

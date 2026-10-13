@@ -17,6 +17,7 @@ import com.laromie.rostok.data.PrepRepository
 import com.laromie.rostok.data.Study
 import com.laromie.rostok.data.TimeUtils
 import com.laromie.rostok.data.Prefs
+import com.laromie.rostok.data.RewardStyle
 import com.laromie.rostok.data.Rewards
 import com.laromie.rostok.data.UsageRepository
 import com.laromie.rostok.service.BlockerService
@@ -42,7 +43,8 @@ data class UiState(
     val streak: Int = 0,
     val bestStreak: Int = 0,
     val totalResists: Int = 0,
-    val stage: PlantStage = Rewards.STAGES.first(),
+    val stage: PlantStage = RewardStyle.PLANT.stages().first(),
+    val rewardStyle: RewardStyle = RewardStyle.PLANT,
     val nextStage: PlantStage? = null,
     val achievements: Set<String> = emptySet(),
     val history: List<HistoryEntry> = emptyList(),
@@ -118,6 +120,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             totalResists = prefs.totalResists,
             stage = rewards.plantStage(),
             nextStage = rewards.nextStage(),
+            rewardStyle = prefs.rewardStyle,
             achievements = prefs.achievements,
             history = rewards.history(),
             prep = prep,
@@ -138,6 +141,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setLimit(pkg: String, minutes: Int) {
         prefs.setLimitMinutes(pkg, minutes)
+        refreshPrefs()
+    }
+
+    fun setRewardStyle(style: RewardStyle) {
+        prefs.rewardStyle = style
         refreshPrefs()
     }
 

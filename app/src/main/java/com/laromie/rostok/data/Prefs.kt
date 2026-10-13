@@ -131,6 +131,10 @@ class Prefs(context: Context) {
         get() = sp.getString("history", "")!!
         set(value) = sp.edit { putString("history", value) }
 
+    var rewardStyle: RewardStyle
+        get() = RewardStyle.entries.firstOrNull { it.name == sp.getString("reward_style", null) } ?: RewardStyle.PLANT
+        set(value) = sp.edit { putString("reward_style", value.name) }
+
     var initialized: Boolean
         get() = sp.getBoolean("initialized", false)
         set(value) = sp.edit { putBoolean("initialized", value) }

@@ -136,7 +136,7 @@ private fun SmallStat(emoji: String, value: String, label: String, modifier: Mod
 @Composable
 private fun HowToEarn(goalMinutes: Int) {
     SectionCard {
-        Text("Как растить росток", style = MaterialTheme.typography.titleMedium)
+        Text("Как зарабатывать очки 🌱", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(4.dp))
         listOf(
             "☀️ День в пределах цели (${goalMinutes / 60} ч ${goalMinutes % 60} мин): +${Rewards.DAY_BASE}, " +

@@ -16,11 +16,24 @@ android {
         versionName = "1.0"
     }
 
+    // Постоянный ключ подписи берётся из секретов GitHub (см. README → «Постоянный ключ подписи»).
+    // Пока его нет, APK подписывается временным debug-ключом.
+    val releaseKeystore = System.getenv("ROSTOK_KEYSTORE_PATH")
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("ROSTOK_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ROSTOK_KEY_ALIAS") ?: "rostok"
+                keyPassword = System.getenv("ROSTOK_KEY_PASSWORD") ?: System.getenv("ROSTOK_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Подписываем debug-ключом, чтобы release-APK можно было сразу поставить на телефон.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 

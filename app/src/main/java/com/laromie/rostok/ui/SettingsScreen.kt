@@ -43,6 +43,7 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item { FocusCard(state, vm) }
+        item { AppearanceCard(state, vm) }
         item { GoalCard(state, vm) }
         item { PauseCard(state, vm) }
         item {
