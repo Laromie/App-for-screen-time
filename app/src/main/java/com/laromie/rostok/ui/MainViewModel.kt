@@ -21,6 +21,7 @@ import com.laromie.rostok.data.RewardStyle
 import com.laromie.rostok.data.Rewards
 import com.laromie.rostok.data.UsageRepository
 import com.laromie.rostok.service.BlockerService
+import com.laromie.rostok.widget.Widgets
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -89,12 +90,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 buildState(apps, week)
             }
             state = fresh
+            Widgets.updateAll(getApplication<Application>())
         }
     }
 
     /** Быстрое обновление настроек без пересчёта статистики. */
     private fun refreshPrefs() {
         state = buildState(state.apps, state.week)
+        Widgets.updateAll(getApplication<Application>())
     }
 
     private fun buildState(apps: List<InstalledApp>, week: List<DayUsage>): UiState {

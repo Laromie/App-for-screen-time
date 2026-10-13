@@ -2,4 +2,10 @@
 <resources>
     <string name="app_name">Росток</string>
     <string name="accessibility_description">Росток видит только то, какое приложение сейчас открыто, чтобы показать паузу перед соцсетями и соблюдать твои лимиты. Содержимое экрана не читается и никуда не отправляется.</string>
+    <string name="widget_screen_time_label">Экранное время</string>
+    <string name="widget_screen_time_desc">Сколько ты сегодня в телефоне и сколько осталось до цели</string>
+    <string name="widget_top_apps_label">Топ приложений</string>
+    <string name="widget_top_apps_desc">Три приложения, которые сегодня съели больше всего времени</string>
+    <string name="widget_goals_label">Цели</string>
+    <string name="widget_goals_desc">Ближайший экзамен и прогресс подготовки, или серия дней и очки</string>
 </resources>

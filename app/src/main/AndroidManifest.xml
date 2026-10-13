@@ -56,5 +56,41 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service" />
         </service>
+        <!-- Виджеты 2×2 в стиле «жидкого стекла» -->
+        <receiver
+            android:name=".widget.ScreenTimeWidget"
+            android:exported="false"
+            android:label="@string/widget_screen_time_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_screen_time_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.TopAppsWidget"
+            android:exported="false"
+            android:label="@string/widget_top_apps_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_top_apps_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.GoalsWidget"
+            android:exported="false"
+            android:label="@string/widget_goals_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_goals_info" />
+        </receiver>
     </application>
 </manifest>

@@ -1,19 +1,24 @@
 package com.laromie.rostok.service
 
 import android.accessibilityservice.AccessibilityService
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
 import android.view.inputmethod.InputMethodManager
+import androidx.core.content.ContextCompat
 import com.laromie.rostok.data.Prefs
 import com.laromie.rostok.data.PrepRepository
 import com.laromie.rostok.data.Strictness
 import com.laromie.rostok.data.TimeUtils
 import com.laromie.rostok.data.UsageRepository
 import com.laromie.rostok.ui.InterceptActivity
+import com.laromie.rostok.widget.Widgets
 import java.util.concurrent.Executors
 
 /**
@@ -34,10 +39,25 @@ class BlockerService : AccessibilityService() {
     private var lastLaunchTime = 0L
     private var keyboardPackages: Set<String> = emptySet()
 
+    private var lastWidgetUpdate = 0L
+
     private val periodicCheck = object : Runnable {
         override fun run() {
             currentPkg?.let { check(it) }
+            val now = System.currentTimeMillis()
+            if (now - lastWidgetUpdate >= WIDGET_INTERVAL_MS) {
+                lastWidgetUpdate = now
+                Widgets.updateAll(this@BlockerService)
+            }
             main.postDelayed(this, CHECK_INTERVAL_MS)
+        }
+    }
+
+    /** При разблокировке телефона обновляем виджеты, чтобы на рабочем столе были свежие цифры. */
+    private val unlockReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            lastWidgetUpdate = System.currentTimeMillis()
+            Widgets.updateAll(context)
         }
     }
 
@@ -49,6 +69,9 @@ class BlockerService : AccessibilityService() {
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
         keyboardPackages = imm.enabledInputMethodList.map { it.packageName }.toSet()
         main.postDelayed(periodicCheck, CHECK_INTERVAL_MS)
+        ContextCompat.registerReceiver(
+            this, unlockReceiver, IntentFilter(Intent.ACTION_USER_PRESENT), ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
@@ -116,6 +139,7 @@ class BlockerService : AccessibilityService() {
 
     override fun onDestroy() {
         main.removeCallbacks(periodicCheck)
+        runCatching { unregisterReceiver(unlockReceiver) }
         worker.shutdownNow()
         super.onDestroy()
     }
@@ -123,6 +147,7 @@ class BlockerService : AccessibilityService() {
     companion object {
         private const val CHECK_INTERVAL_MS = 15_000L
         private const val RELAUNCH_GUARD_MS = 2_000L
+        private const val WIDGET_INTERVAL_MS = 5 * 60_000L
 
         fun isEnabled(context: Context): Boolean {
             val expected = ComponentName(context, BlockerService::class.java)

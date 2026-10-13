@@ -112,12 +112,15 @@ class MainActivity : ComponentActivity() {
     companion object {
         private const val EXTRA_TAB = "tab"
         private const val KEY_TAB = "tab"
+        const val TAB_TODAY = 0
         const val TAB_PREP = 1
 
-        /** Открыть приложение сразу на вкладке «Учёба». */
-        fun prepIntent(context: Context): Intent =
+        /** Открыть приложение сразу на нужной вкладке. */
+        fun tabIntent(context: Context, tab: Int): Intent =
             Intent(context, MainActivity::class.java)
-                .putExtra(EXTRA_TAB, TAB_PREP)
+                .putExtra(EXTRA_TAB, tab)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+
+        fun prepIntent(context: Context): Intent = tabIntent(context, TAB_PREP)
     }
 }
