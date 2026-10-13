@@ -11,6 +11,14 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
@@ -18,25 +26,18 @@ import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Today
-import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import com.laromie.rostok.data.Prefs
 import com.laromie.rostok.work.Background
 
-private data class Tab(val title: String, val icon: ImageVector)
-
 private val tabs = listOf(
-    Tab("Сегодня", Icons.Filled.Today),
-    Tab("Учёба", Icons.Filled.School),
-    Tab("Приложения", Icons.Filled.Apps),
-    Tab("Награды", Icons.Filled.EmojiEvents),
-    Tab("Настройки", Icons.Filled.Settings),
+    NavTab("Сегодня", Icons.Filled.Today),
+    NavTab("Учёба", Icons.Filled.School),
+    NavTab("Приложения", Icons.Filled.Apps),
+    NavTab("Награды", Icons.Filled.EmojiEvents),
+    NavTab("Настройки", Icons.Filled.Settings),
 )
 
 class MainActivity : ComponentActivity() {
@@ -56,21 +57,23 @@ class MainActivity : ComponentActivity() {
             RostokTheme {
                 Scaffold(
                     bottomBar = {
-                        NavigationBar {
-                            tabs.forEachIndexed { i, t ->
-                                NavigationBarItem(
-                                    selected = tab.intValue == i,
-                                    onClick = { tab.intValue = i },
-                                    icon = { Icon(t.icon, contentDescription = null) },
-                                    label = { Text(t.title, maxLines = 1) },
-                                )
-                            }
-                        }
+                        CompactNavBar(tabs, tab.intValue) { tab.intValue = it }
                     },
                 ) { padding ->
-                    val modifier = Modifier.padding(padding)
                     val state = vm.state
-                    when (tab.intValue) {
+                    // Разделы сменяются со сдвигом в сторону нажатой вкладки и растворением.
+                    AnimatedContent(
+                        targetState = tab.intValue,
+                        transitionSpec = {
+                            val dir = if (targetState > initialState) 1 else -1
+                            (slideInHorizontally(tween(260)) { it * dir / 5 } + fadeIn(tween(260))) togetherWith
+                                (slideOutHorizontally(tween(200)) { -it * dir / 5 } + fadeOut(tween(160)))
+                        },
+                        modifier = Modifier.padding(padding).fillMaxSize(),
+                        label = "tabs",
+                    ) { current ->
+                    val modifier = Modifier.fillMaxSize()
+                    when (current) {
                         0 -> TodayScreen(
                             state = state,
                             catalog = vm.catalog,
@@ -89,6 +92,7 @@ class MainActivity : ComponentActivity() {
                             onOpenAccessibility = ::openAccessibility,
                             modifier = modifier,
                         )
+                    }
                     }
                 }
             }

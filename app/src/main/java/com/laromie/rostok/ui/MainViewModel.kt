@@ -63,6 +63,10 @@ data class UiState(
     val eveningSummary: Boolean = true,
     val eveningHour: Int = 21,
     val limitWarnings: Boolean = true,
+    // Календарь: начало дня → минуты
+    val dayMinutes: Map<Long, Int> = emptyMap(),
+    val dayGoalMinutes: Map<Long, Int> = emptyMap(),
+    val studyByDay: Map<Long, Int> = emptyMap(),
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -95,6 +99,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 study.checkCompletion()
                 val apps = if (state.apps.isEmpty()) catalog.launchableApps() else state.apps
                 val week = usage.lastDays(7)
+                // Завершённые дни недели сохраняем в историю — по ней рисуется календарь.
+                week.dropLast(1).filter { it.totalMs > 0 }.forEach {
+                    prefs.recordDay(
+                        it.dayStart,
+                        (it.totalMs / TimeUtils.MINUTE).toInt(),
+                        (prefs.goalUsageMs(it) / TimeUtils.MINUTE).toInt(),
+                    )
+                }
                 buildState(apps, week)
             }
             state = fresh
@@ -144,6 +156,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             eveningSummary = prefs.eveningSummary,
             eveningHour = prefs.eveningHour,
             limitWarnings = prefs.limitWarnings,
+            dayMinutes = prefs.dayHistory() + week.filter { it.totalMs > 0 }
+                .associate { it.dayStart to (it.totalMs / TimeUtils.MINUTE).toInt() },
+            dayGoalMinutes = prefs.dayGoalHistory() + week.filter { it.totalMs > 0 }
+                .associate { it.dayStart to (prefs.goalUsageMs(it) / TimeUtils.MINUTE).toInt() },
+            studyByDay = prepRepo.sessions()
+                .groupBy { TimeUtils.startOfDay(it.start) }
+                .mapValues { (_, list) -> list.sumOf { it.minutes } },
         )
     }
 

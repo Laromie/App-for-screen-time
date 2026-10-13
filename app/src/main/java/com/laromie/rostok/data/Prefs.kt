@@ -165,20 +165,31 @@ class Prefs(context: Context) {
 
     // ---------- История завершённых дней (для сравнения недель) ----------
 
-    /** Минуты экрана по дням: начало дня → минуты. Хранится до 60 дней. */
-    fun dayHistory(): Map<Long, Int> = sp.getString("day_history", "")!!
+    /** Минуты экрана по дням: начало дня → всего минут. Хранится до 120 дней. */
+    fun dayHistory(): Map<Long, Int> = historyEntries().mapValues { it.value.first }
+
+    /** Минуты, которые шли в зачёт цели (всё время или только отвлекающие), по дням. */
+    fun dayGoalHistory(): Map<Long, Int> = historyEntries().mapValues { it.value.second }
+
+    /** Формат: "день:всего:в_зачёт;…" (старые записи без третьего поля — "день:всего"). */
+    private fun historyEntries(): Map<Long, Pair<Int, Int>> = sp.getString("day_history", "")!!
         .split(";")
         .mapNotNull { part ->
-            val (day, min) = part.split(":").takeIf { it.size == 2 } ?: return@mapNotNull null
-            day.toLongOrNull()?.let { d -> min.toIntOrNull()?.let { d to it } }
+            val f = part.split(":")
+            if (f.size < 2) return@mapNotNull null
+            val day = f[0].toLongOrNull() ?: return@mapNotNull null
+            val total = f[1].toIntOrNull() ?: return@mapNotNull null
+            day to (total to (f.getOrNull(2)?.toIntOrNull() ?: total))
         }
         .toMap()
 
-    fun recordDay(dayStart: Long, minutes: Int) {
-        val updated = (dayHistory() + (dayStart to minutes)).entries
+    fun recordDay(dayStart: Long, minutes: Int, goalMinutes: Int = minutes) {
+        val updated = (historyEntries() + (dayStart to (minutes to goalMinutes))).entries
             .sortedByDescending { it.key }
-            .take(60)
-        sp.edit { putString("day_history", updated.joinToString(";") { "${it.key}:${it.value}" }) }
+            .take(120)
+        sp.edit {
+            putString("day_history", updated.joinToString(";") { "${it.key}:${it.value.first}:${it.value.second}" })
+        }
     }
 
     var rewardStyle: RewardStyle

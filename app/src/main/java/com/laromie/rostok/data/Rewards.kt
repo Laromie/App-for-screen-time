@@ -74,9 +74,9 @@ class Rewards(private val prefs: Prefs, private val usage: UsageRepository) {
     private fun evaluateDay(dayStart: Long) {
         val result = usage.day(dayStart)
         val totalMinutes = (result.totalMs / TimeUtils.MINUTE).toInt()
-        prefs.recordDay(dayStart, totalMinutes)
         // В зачёт цели — всё время или только отвлекающие приложения (как выбрано в настройках).
         val minutes = (prefs.goalUsageMs(result) / TimeUtils.MINUTE).toInt()
+        prefs.recordDay(dayStart, totalMinutes, minutes)
         val goal = prefs.dailyGoalMinutes
         val date = TimeUtils.shortDayName(dayStart)
 

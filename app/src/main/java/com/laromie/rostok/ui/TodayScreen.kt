@@ -2,6 +2,21 @@ package com.laromie.rostok.ui
 
 import android.content.Intent
 import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.BiasAlignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -75,11 +90,12 @@ fun TodayScreen(
         }
 
         val today = state.today
-        item { TodaySummary(state) }
+        item { TodaySummary(state, catalog) }
         item { PrepTeaser(state, onOpenPrep) }
         if (state.week.isNotEmpty()) {
             item { WeekChart(state) }
         }
+        item { CalendarCard(state, catalog) }
         item {
             val context = LocalContext.current
             FilledTonalButton(
@@ -103,57 +119,168 @@ fun TodayScreen(
     }
 }
 
+/** Сводка дня: крупное время, полоса по приложениям с отметкой цели и три плитки. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TodaySummary(state: UiState) {
+private fun TodaySummary(state: UiState, catalog: AppCatalog) {
     val totalMs = state.today?.totalMs ?: 0L
-    // В кольце — то, что идёт в зачёт цели: всё время или только отвлекающие приложения.
+    // В зачёт цели — всё время или только отвлекающие приложения.
     val usedMs = state.goalUsedMs
     val goalMs = state.goalMinutes * TimeUtils.MINUTE
     val left = goalMs - usedMs
+    val over = left < 0
+
+    // Сегменты полосы: топ-3 приложения из тех, что идут в зачёт цели, и «остальное».
+    val counted = state.today?.apps.orEmpty()
+        .filter { !state.goalTrackedOnly || it.packageName in state.tracked }
+    val colors = listOf(
+        MaterialTheme.colorScheme.primary,
+        MaterialTheme.colorScheme.tertiary,
+        lerp(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.onSurface, 0.45f),
+    )
+    val restColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+    val segments = counted.take(3).mapIndexed { i, app ->
+        BarSegment(catalog.label(app.packageName), app.timeMs, colors[i])
+    } + listOfNotNull(
+        (usedMs - counted.take(3).sumOf { it.timeMs }).takeIf { it >= TimeUtils.MINUTE }
+            ?.let { BarSegment("Остальное", it, restColor) }
+    )
+
     SectionCard {
-        if (state.goalTrackedOnly) {
+        Text(
+            if (state.goalTrackedOnly) "Отвлекающие приложения сегодня" else "Сегодня в телефоне",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "Цель — только отвлекающие приложения · всего в телефоне ${TimeUtils.formatDuration(totalMs)}",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 8.dp),
+                TimeUtils.formatDuration(usedMs),
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                modifier = Modifier.weight(1f),
+            )
+            StatusChip(
+                text = if (over) "+${TimeUtils.formatDuration(-left)}" else "ещё ${TimeUtils.formatDuration(left)}",
+                container = if (over) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
             )
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            GoalRing(fraction = usedMs.toFloat() / goalMs, modifier = Modifier.size(140.dp)) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        TimeUtils.formatDuration(usedMs),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center,
-                    )
-                    Text(
-                        "из ${TimeUtils.formatMinutes(state.goalMinutes)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+        if (state.goalTrackedOnly) {
+            Text(
+                "Всего в телефоне ${TimeUtils.formatDuration(totalMs)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.height(14.dp))
+        GoalBar(segments = segments, usedMs = usedMs, goalMs = goalMs)
+        Spacer(Modifier.height(4.dp))
+        GoalCaption(usedMs = usedMs, goalMs = goalMs, goalMinutes = state.goalMinutes)
+        if (segments.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                segments.forEach { seg ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(8.dp).clip(CircleShape).background(seg.color))
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "${seg.label} ${TimeUtils.formatDuration(seg.ms)}",
+                            style = MaterialTheme.typography.labelMedium,
+                            maxLines = 1,
+                        )
+                    }
                 }
             }
-            Spacer(Modifier.width(16.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Stat(
-                    if (left >= 0) "Осталось до цели" else "Сверх цели",
-                    TimeUtils.formatDuration(kotlin.math.abs(left)),
-                )
-                Stat("Разблокировок", "${state.today?.pickups ?: 0}")
-                Stat("Серия", "🔥 ${state.streak} дн.")
-                Stat("Очки", "🌱 ${state.points}")
-            }
+        }
+        Spacer(Modifier.height(14.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MiniTile("🔓", "${state.today?.pickups ?: 0}", "разблокировок", Modifier.weight(1f))
+            MiniTile("🔥", "${state.streak}", "дней серия", Modifier.weight(1f))
+            MiniTile("🌱", "${state.points}", "очков", Modifier.weight(1f))
+        }
+    }
+}
+
+private data class BarSegment(val label: String, val ms: Long, val color: Color)
+
+/**
+ * Горизонтальная полоса: сегменты по приложениям, шкала — до цели (или до факта, если цель превышена).
+ * Вертикальная черта — где проходит цель. Полоса плавно «заполняется» при появлении.
+ */
+@Composable
+private fun GoalBar(segments: List<BarSegment>, usedMs: Long, goalMs: Long) {
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(usedMs) { progress.animateTo(1f, tween(durationMillis = 800, easing = FastOutSlowInEasing)) }
+    val track = MaterialTheme.colorScheme.surfaceVariant
+    val marker = MaterialTheme.colorScheme.onSurface
+    val scale = maxOf(usedMs, goalMs).coerceAtLeast(1L).toFloat()
+    Canvas(
+        Modifier
+            .fillMaxWidth()
+            .height(18.dp)
+            .clip(RoundedCornerShape(9.dp))
+    ) {
+        drawRect(track)
+        var x = 0f
+        val p = progress.value
+        segments.forEach { seg ->
+            val w = size.width * seg.ms / scale * p
+            drawRect(seg.color, topLeft = Offset(x, 0f), size = Size(w, size.height))
+            x += w
+        }
+        // Отметка цели, если факт её перерос.
+        if (usedMs > goalMs) {
+            val gx = size.width * goalMs / scale
+            drawLine(marker, Offset(gx, 0f), Offset(gx, size.height), strokeWidth = 2.5.dp.toPx())
         }
     }
 }
 
 @Composable
-private fun Stat(label: String, value: String) {
-    Column {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.titleMedium)
+private fun GoalCaption(usedMs: Long, goalMs: Long, goalMinutes: Int) {
+    val scale = maxOf(usedMs, goalMs).coerceAtLeast(1L).toFloat()
+    val frac = (goalMs / scale).coerceIn(0f, 1f)
+    Box(Modifier.fillMaxWidth()) {
+        Text(
+            "цель ${TimeUtils.formatMinutes(goalMinutes)}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            // Подпись стоит под отметкой цели (или у правого края, если цель не превышена).
+            modifier = Modifier.align(BiasAlignment(horizontalBias = frac * 2 - 1, verticalBias = 0f)),
+        )
+    }
+}
+
+@Composable
+private fun StatusChip(text: String, container: Color) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(50))
+            .background(container)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+    }
+}
+
+@Composable
+private fun MiniTile(emoji: String, value: String, label: String, modifier: Modifier) {
+    Column(
+        modifier
+            .clip(MaterialTheme.shapes.medium)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .padding(horizontal = 10.dp, vertical = 8.dp)
+    ) {
+        Text("$emoji $value", style = MaterialTheme.typography.titleMedium, maxLines = 1)
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
     }
 }
 

@@ -1,5 +1,14 @@
 package com.laromie.rostok.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -65,38 +74,61 @@ import java.util.TimeZone
 
 private val dateFormat = SimpleDateFormat("d MMMM", Locale.forLanguageTag("ru"))
 
+/** Что сейчас показывает вкладка «Учёба». Порядок задаёт направление анимации. */
+private sealed class PrepPage(val order: Int) {
+    data object Picker : PrepPage(0)
+    data class Dashboard(val prep: Prep) : PrepPage(1)
+    data class Editor(val draft: Prep, val isNew: Boolean) : PrepPage(2)
+}
+
 @Composable
 fun PrepScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier) {
     // Черновик, который сейчас редактируется (новая подготовка или изменение текущей).
     var draft by remember { mutableStateOf<Prep?>(null) }
 
-    val current = draft
     val saved = state.prep
-    when {
-        current != null -> PrepEditor(
-            initial = current,
-            trackedApps = state.apps.filter { it.packageName in state.tracked },
-            isNew = saved == null,
-            onSave = {
-                vm.savePrep(it)
-                draft = null
-            },
-            onCancel = { draft = null },
-            modifier = modifier,
-        )
+    val page: PrepPage = draft?.let { PrepPage.Editor(it, isNew = saved == null) }
+        ?: saved?.let { PrepPage.Dashboard(it) }
+        ?: PrepPage.Picker
 
-        saved == null -> TemplatePicker(
-            onPick = { draft = Prep.fromTemplate(it) },
-            modifier = modifier,
-        )
+    // Вглубь (к настройке) — экран въезжает справа, назад — слева.
+    AnimatedContent(
+        targetState = page,
+        contentKey = { it::class },
+        transitionSpec = {
+            val dir = if (targetState.order > initialState.order) 1 else -1
+            (slideInHorizontally(tween(300)) { it * dir / 3 } + fadeIn(tween(300))) togetherWith
+                (slideOutHorizontally(tween(250)) { -it * dir / 4 } + fadeOut(tween(200)))
+        },
+        modifier = modifier,
+        label = "prepPage",
+    ) { p ->
+        when (p) {
+            is PrepPage.Editor -> PrepEditor(
+                initial = p.draft,
+                trackedApps = state.apps.filter { it.packageName in state.tracked },
+                isNew = p.isNew,
+                onSave = {
+                    vm.savePrep(it)
+                    draft = null
+                },
+                onCancel = { draft = null },
+                modifier = Modifier.fillMaxSize(),
+            )
 
-        else -> PrepDashboard(
-            state = state,
-            prep = saved,
-            vm = vm,
-            onEdit = { draft = saved },
-            modifier = modifier,
-        )
+            PrepPage.Picker -> TemplatePicker(
+                onPick = { draft = Prep.fromTemplate(it) },
+                modifier = Modifier.fillMaxSize(),
+            )
+
+            is PrepPage.Dashboard -> PrepDashboard(
+                state = state,
+                prep = p.prep,
+                vm = vm,
+                onEdit = { draft = p.prep },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
     }
 }
 
@@ -452,7 +484,7 @@ private fun PrepEditor(
             }
         }
         items(prep.items, key = { it.id }) { item ->
-            SectionCard {
+            SectionCard(Modifier.animateItem()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = item.name,
@@ -509,10 +541,13 @@ private fun PrepEditor(
         item { StepTitle(3, "Насколько строго в учебные часы") }
         items(Strictness.entries) { s ->
             val selected = prep.strictness == s
+            val color by animateColorAsState(
+                if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
+                label = "strictness",
+            )
             SectionCard(
                 modifier = Modifier.clickable { prep = prep.copy(strictness = s) },
-                containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer
-                else MaterialTheme.colorScheme.surfaceContainer,
+                containerColor = color,
             ) {
                 Text("${s.emoji} ${s.title}", style = MaterialTheme.typography.titleMedium)
                 Text(s.description, style = MaterialTheme.typography.bodySmall)
@@ -526,8 +561,8 @@ private fun PrepEditor(
             }
         }
         if (advanced) {
-            item {
-                SectionCard {
+            item(key = "adv1") {
+                SectionCard(Modifier.animateItem()) {
                     Text("🕓 Учебные часы", style = MaterialTheme.typography.titleMedium)
                     Text(
                         "В это время действуют рамки строгости. Вне учебных часов — обычная пауза и лимиты.",
@@ -558,8 +593,8 @@ private fun PrepEditor(
                     )
                 }
             }
-            item {
-                SectionCard {
+            item(key = "adv2") {
+                SectionCard(Modifier.animateItem()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("🌙 Отбой перед экзаменом", style = MaterialTheme.typography.titleMedium)
@@ -590,8 +625,8 @@ private fun PrepEditor(
                     }
                 }
             }
-            item {
-                SectionCard {
+            item(key = "adv3") {
+                SectionCard(Modifier.animateItem()) {
                     Text("✅ Не ограничивать в учебные часы", style = MaterialTheme.typography.titleMedium)
                     Text(
                         "Например, мессенджер с чатом группы. Список берётся из вкладки «Приложения».",
@@ -622,8 +657,8 @@ private fun PrepEditor(
             }
         }
 
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        item(key = "actions") {
+            Row(Modifier.animateItem(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text("Отмена") }
                 Button(onClick = { onSave(prep) }, enabled = valid, modifier = Modifier.weight(1f)) {
                     Text(if (isNew) "Начать подготовку" else "Сохранить")
