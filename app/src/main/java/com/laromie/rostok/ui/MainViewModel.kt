@@ -22,6 +22,7 @@ import com.laromie.rostok.data.Rewards
 import com.laromie.rostok.data.UsageRepository
 import com.laromie.rostok.service.BlockerService
 import com.laromie.rostok.widget.Widgets
+import com.laromie.rostok.work.Background
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -55,6 +56,13 @@ data class UiState(
     val studyTodayMinutes: Int = 0,
     val studyWeekMinutes: Int = 0,
     val activeItemId: String? = null,
+    // Цель и уведомления
+    val goalTrackedOnly: Boolean = false,
+    /** Сегодняшнее время, которое идёт в зачёт цели. */
+    val goalUsedMs: Long = 0,
+    val eveningSummary: Boolean = true,
+    val eveningHour: Int = 21,
+    val limitWarnings: Boolean = true,
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -131,6 +139,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             studyTodayMinutes = study.minutesSince(TimeUtils.startOfToday()),
             studyWeekMinutes = study.minutesSince(TimeUtils.startOfToday() - 6 * TimeUtils.DAY),
             activeItemId = prepRepo.activeItemId,
+            goalTrackedOnly = prefs.goalTrackedOnly,
+            goalUsedMs = week.lastOrNull()?.let { prefs.goalUsageMs(it) } ?: 0L,
+            eveningSummary = prefs.eveningSummary,
+            eveningHour = prefs.eveningHour,
+            limitWarnings = prefs.limitWarnings,
         )
     }
 
@@ -149,6 +162,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setRewardStyle(style: RewardStyle) {
         prefs.rewardStyle = style
+        refreshPrefs()
+    }
+
+    fun setGoalTrackedOnly(value: Boolean) {
+        prefs.goalTrackedOnly = value
+        refreshPrefs()
+    }
+
+    fun setEveningSummary(value: Boolean) {
+        prefs.eveningSummary = value
+        refreshPrefs()
+    }
+
+    fun setEveningHour(hour: Int) {
+        prefs.eveningHour = hour
+        Background.schedule(getApplication<Application>(), eveningChanged = true)
+        refreshPrefs()
+    }
+
+    fun setLimitWarnings(value: Boolean) {
+        prefs.limitWarnings = value
         refreshPrefs()
     }
 

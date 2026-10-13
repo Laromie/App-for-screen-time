@@ -23,6 +23,9 @@ data class DayUsage(
 ) {
     fun timeFor(pkg: String): Long = apps.firstOrNull { it.packageName == pkg }?.timeMs ?: 0L
     fun opensFor(pkg: String): Int = apps.firstOrNull { it.packageName == pkg }?.opens ?: 0
+
+    /** Суммарное время только по указанным приложениям (например, отвлекающим). */
+    fun timeForApps(pkgs: Set<String>): Long = apps.filter { it.packageName in pkgs }.sumOf { it.timeMs }
 }
 
 /**
@@ -79,69 +82,20 @@ class UsageRepository(context: Context) {
     fun range(start: Long, end: Long): DayUsage {
         if (end <= start || !hasPermission()) return DayUsage(start, 0, 0, emptyList())
 
-        val time = HashMap<String, Long>()
-        val opens = HashMap<String, Int>()
-        var pickups = 0
-
-        var current: String? = null
-        var currentStart = start
-        var seenAny = false
-        var lastBgPkg: String? = null
-        var lastBgTime = 0L
-
-        fun add(pkg: String, ms: Long) {
-            if (ms > 0) time[pkg] = (time[pkg] ?: 0L) + ms
-        }
-
+        val list = ArrayList<UsageCalculator.Event>()
         val events = usm.queryEvents(start, end)
         val e = UsageEvents.Event()
         while (events.hasNextEvent()) {
             events.getNextEvent(e)
-            val pkg = e.packageName
-            val ts = e.timeStamp
-            when (e.eventType) {
-                UsageEvents.Event.MOVE_TO_FOREGROUND -> { // == ACTIVITY_RESUMED
-                    val cur = current
-                    if (cur != null && cur != pkg) add(cur, ts - currentStart)
-                    if (cur != pkg) {
-                        // Переход между экранами одного приложения — не новое открытие.
-                        val sameAppBounce = lastBgPkg == pkg && ts - lastBgTime < 2_000
-                        if (!sameAppBounce) opens[pkg] = (opens[pkg] ?: 0) + 1
-                        current = pkg
-                        currentStart = ts
-                    }
-                    seenAny = true
-                }
-
-                UsageEvents.Event.MOVE_TO_BACKGROUND -> { // == ACTIVITY_PAUSED
-                    if (current == pkg) {
-                        add(pkg, ts - currentStart)
-                        current = null
-                    } else if (!seenAny) {
-                        // Приложение было открыто ещё до начала интервала.
-                        add(pkg, ts - start)
-                    }
-                    lastBgPkg = pkg
-                    lastBgTime = ts
-                    seenAny = true
-                }
-
-                UsageEvents.Event.SCREEN_NON_INTERACTIVE -> {
-                    current?.let { add(it, ts - currentStart) }
-                    current = null
-                }
-
-                UsageEvents.Event.KEYGUARD_HIDDEN -> pickups++
-            }
+            val type = when (e.eventType) {
+                UsageEvents.Event.MOVE_TO_FOREGROUND -> UsageCalculator.Type.FOREGROUND // == ACTIVITY_RESUMED
+                UsageEvents.Event.MOVE_TO_BACKGROUND -> UsageCalculator.Type.BACKGROUND // == ACTIVITY_PAUSED
+                UsageEvents.Event.SCREEN_NON_INTERACTIVE -> UsageCalculator.Type.SCREEN_OFF
+                UsageEvents.Event.KEYGUARD_HIDDEN -> UsageCalculator.Type.UNLOCK
+                else -> null
+            } ?: continue
+            list.add(UsageCalculator.Event(type, e.timeStamp, e.packageName ?: ""))
         }
-        current?.let { add(it, end - currentStart) }
-
-        val apps = time.keys
-            .filter { it !in ignored }
-            .map { AppUsage(it, time[it] ?: 0L, opens[it] ?: 0) }
-            .filter { it.timeMs >= 1_000 }
-            .sortedByDescending { it.timeMs }
-
-        return DayUsage(start, apps.sumOf { it.timeMs }, pickups, apps)
+        return UsageCalculator.compute(list, start, end, ignored)
     }
 }

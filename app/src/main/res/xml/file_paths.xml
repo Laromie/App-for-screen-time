@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Картинки итогов недели, которыми делятся в сторис. -->
+    <cache-path name="recap" path="recap/" />
+</paths>

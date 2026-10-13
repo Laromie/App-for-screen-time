@@ -11,7 +11,9 @@ import android.os.Looper
 import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
 import android.view.inputmethod.InputMethodManager
+import android.widget.Toast
 import androidx.core.content.ContextCompat
+import com.laromie.rostok.data.AppCatalog
 import com.laromie.rostok.data.Prefs
 import com.laromie.rostok.data.PrepRepository
 import com.laromie.rostok.data.Strictness
@@ -31,6 +33,7 @@ class BlockerService : AccessibilityService() {
     private lateinit var prefs: Prefs
     private lateinit var usage: UsageRepository
     private lateinit var prepRepo: PrepRepository
+    private val catalog by lazy { AppCatalog(this) }
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
 
@@ -119,12 +122,35 @@ class BlockerService : AccessibilityService() {
         val limit = prefs.limitMinutes(pkg)
         if (limit > 0) {
             val allowedMs = (limit + prefs.bonusMinutesToday(pkg)) * TimeUtils.MINUTE
-            if (usage.today().timeFor(pkg) >= allowedMs) return InterceptActivity.MODE_LIMIT
+            val used = usage.today().timeFor(pkg)
+            if (used >= allowedMs) return InterceptActivity.MODE_LIMIT
+            maybeWarn(pkg, allowedMs - used)
         }
 
         // В учебные часы пауза включена всегда, даже если в настройках её выключили.
         if (!prefs.pauseEnabled && !studyTime) return null
         return if (unlocked) null else InterceptActivity.MODE_PAUSE
+    }
+
+    /** Уже показанные предупреждения: "день:пакет:порог". */
+    private val warned = HashSet<String>()
+
+    /** Предупреждение за 5 и за 1 минуту до конца лимита, каждое — один раз в день. */
+    private fun maybeWarn(pkg: String, remainingMs: Long) {
+        if (!prefs.limitWarnings) return
+        val day = TimeUtils.startOfToday()
+        val due = WARN_THRESHOLDS_MIN.filter { remainingMs <= it * TimeUtils.MINUTE }
+        if (due.isEmpty()) return
+        val keys = due.map { "$day:$pkg:$it" }
+        if (keys.all { it in warned }) return
+        if (warned.none { it.startsWith("$day:") }) warned.clear() // новый день — старое забываем
+        warned.addAll(keys)
+
+        val minutesLeft = ((remainingMs + TimeUtils.MINUTE - 1) / TimeUtils.MINUTE).coerceAtLeast(1)
+        val label = catalog.label(pkg)
+        main.post {
+            Toast.makeText(this, "⏳ $label: осталось $minutesLeft мин из дневного лимита", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun launchIntercept(pkg: String, mode: String) {
@@ -148,6 +174,7 @@ class BlockerService : AccessibilityService() {
         private const val CHECK_INTERVAL_MS = 15_000L
         private const val RELAUNCH_GUARD_MS = 2_000L
         private const val WIDGET_INTERVAL_MS = 5 * 60_000L
+        private val WARN_THRESHOLDS_MIN = listOf(5L, 1L)
 
         fun isEnabled(context: Context): Boolean {
             val expected = ComponentName(context, BlockerService::class.java)

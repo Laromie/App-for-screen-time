@@ -25,7 +25,7 @@ jobs:
       - name: Build
         env:
           ROSTOK_KEYSTORE_PASSWORD: ${{ secrets.ROSTOK_KEYSTORE_PASSWORD }}
-        run: ./gradlew --no-daemon assembleRelease
+        run: ./gradlew --no-daemon testReleaseUnitTest assembleRelease
       - uses: actions/upload-artifact@v4
         with:
           name: rostok-apk

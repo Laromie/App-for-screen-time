@@ -45,7 +45,11 @@ data class HistoryEntry(val time: Long, val delta: Int, val reason: String)
 class Rewards(private val prefs: Prefs, private val usage: UsageRepository) {
 
     /** Подводит итоги всех завершённых дней с момента последней проверки. */
-    fun evaluatePastDays() {
+    fun evaluatePastDays() = synchronized(LOCK) {
+        evaluatePastDaysLocked()
+    }
+
+    private fun evaluatePastDaysLocked() {
         if (!usage.hasPermission()) return
         val today = TimeUtils.startOfToday()
         val yesterday = TimeUtils.previousDay(today)
@@ -69,27 +73,27 @@ class Rewards(private val prefs: Prefs, private val usage: UsageRepository) {
 
     private fun evaluateDay(dayStart: Long) {
         val result = usage.day(dayStart)
-        val minutes = (result.totalMs / TimeUtils.MINUTE).toInt()
+        val totalMinutes = (result.totalMs / TimeUtils.MINUTE).toInt()
+        prefs.recordDay(dayStart, totalMinutes)
+        // В зачёт цели — всё время или только отвлекающие приложения (как выбрано в настройках).
+        val minutes = (prefs.goalUsageMs(result) / TimeUtils.MINUTE).toInt()
         val goal = prefs.dailyGoalMinutes
         val date = TimeUtils.shortDayName(dayStart)
 
-        if (minutes < prefs.bestDayMinutes && result.totalMs > 0) prefs.bestDayMinutes = minutes
+        if (totalMinutes < prefs.bestDayMinutes && result.totalMs > 0) prefs.bestDayMinutes = totalMinutes
 
         if (minutes <= goal) {
             prefs.streak += 1
             prefs.goodDays += 1
             if (prefs.streak > prefs.bestStreak) prefs.bestStreak = prefs.streak
-            // База + бонус за каждые сэкономленные 10 минут + бонус за серию.
-            val saved = (goal - minutes) / 10
-            val streakBonus = minOf(prefs.streak, 10) * 2
-            earn(DAY_BASE + saved + streakBonus, "$date: ${TimeUtils.formatMinutes(minutes)} — цель выполнена")
+            earn(dayPoints(minutes, goal, prefs.streak), "$date: ${TimeUtils.formatMinutes(minutes)} — цель выполнена")
         } else {
             if (prefs.streak > 0) {
                 addHistory(0, "$date: цель превышена, серия ${prefs.streak} дн. прервана")
             }
             prefs.streak = 0
         }
-        checkAchievements(lastDayMinutes = minutes)
+        checkAchievements(lastDayMinutes = totalMinutes)
     }
 
     /** Пользователь на экране паузы решил не открывать приложение. */
@@ -198,6 +202,16 @@ class Rewards(private val prefs: Prefs, private val usage: UsageRepository) {
         const val EXTRA_TIME_MINUTES = 5
         const val ACHIEVEMENT_POINTS = 10
         private const val MAX_HISTORY = 40
+
+        /** Подведение итогов может одновременно запуститься из приложения и из фоновой задачи. */
+        private val LOCK = Any()
+
+        /** Очки за день в пределах цели: база + 1 за каждые сэкономленные 10 минут + бонус за серию (до 10 дней). */
+        fun dayPoints(minutes: Int, goal: Int, streak: Int): Int {
+            val saved = ((goal - minutes) / 10).coerceAtLeast(0)
+            val streakBonus = minOf(streak, 10) * 2
+            return DAY_BASE + saved + streakBonus
+        }
 
         val STAGE_POINTS = listOf(0, 30, 120, 300, 600, 1200, 2500, 5000)
 

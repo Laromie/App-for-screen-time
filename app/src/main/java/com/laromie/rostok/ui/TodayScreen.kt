@@ -1,5 +1,6 @@
 package com.laromie.rostok.ui
 
+import android.content.Intent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -20,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.PathEffect
@@ -77,6 +80,13 @@ fun TodayScreen(
         if (state.week.isNotEmpty()) {
             item { WeekChart(state) }
         }
+        item {
+            val context = LocalContext.current
+            FilledTonalButton(
+                onClick = { context.startActivity(Intent(context, RecapActivity::class.java)) },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("📊 Итоги недели — карточки для сторис") }
+        }
         if (today != null && today.apps.isNotEmpty()) {
             item {
                 Text(
@@ -96,14 +106,24 @@ fun TodayScreen(
 @Composable
 private fun TodaySummary(state: UiState) {
     val totalMs = state.today?.totalMs ?: 0L
+    // В кольце — то, что идёт в зачёт цели: всё время или только отвлекающие приложения.
+    val usedMs = state.goalUsedMs
     val goalMs = state.goalMinutes * TimeUtils.MINUTE
-    val left = goalMs - totalMs
+    val left = goalMs - usedMs
     SectionCard {
+        if (state.goalTrackedOnly) {
+            Text(
+                "Цель — только отвлекающие приложения · всего в телефоне ${TimeUtils.formatDuration(totalMs)}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            GoalRing(fraction = totalMs.toFloat() / goalMs, modifier = Modifier.size(140.dp)) {
+            GoalRing(fraction = usedMs.toFloat() / goalMs, modifier = Modifier.size(140.dp)) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        TimeUtils.formatDuration(totalMs),
+                        TimeUtils.formatDuration(usedMs),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
@@ -167,8 +187,9 @@ private fun WeekChart(state: UiState) {
             val barW = slot * 0.55f
             days.forEachIndexed { i, d ->
                 val h = size.height * d.totalMs / maxMs
+                val used = if (state.goalTrackedOnly) d.timeForApps(state.tracked) else d.totalMs
                 drawRoundRect(
-                    color = if (d.totalMs <= goalMs) good else bad,
+                    color = if (used <= goalMs) good else bad,
                     topLeft = Offset(i * slot + (slot - barW) / 2, size.height - h),
                     size = Size(barW, h),
                     cornerRadius = CornerRadius(6.dp.toPx()),

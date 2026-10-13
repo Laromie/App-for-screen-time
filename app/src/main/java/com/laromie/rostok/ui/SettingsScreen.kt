@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
@@ -15,6 +17,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -46,6 +49,7 @@ fun SettingsScreen(
         item { AppearanceCard(state, vm) }
         item { GoalCard(state, vm) }
         item { PauseCard(state, vm) }
+        item { NotificationsCard(state, vm) }
         item {
             SectionCard {
                 Text("Разрешения", style = MaterialTheme.typography.titleMedium)
@@ -127,6 +131,52 @@ private fun GoalCard(state: UiState, vm: MainViewModel) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        Spacer(Modifier.height(8.dp))
+        ToggleRow(
+            title = "Только отвлекающие приложения",
+            hint = "Карты, звонки, музыка и учёба не тратят цель — считаются только приложения из вкладки «Приложения»",
+            checked = state.goalTrackedOnly,
+            onChange = vm::setGoalTrackedOnly,
+        )
+    }
+}
+
+@Composable
+private fun NotificationsCard(state: UiState, vm: MainViewModel) {
+    SectionCard {
+        Text("🔔 Напоминания", style = MaterialTheme.typography.titleMedium)
+        ToggleRow(
+            title = "Предупреждать о лимите",
+            hint = "За 5 и за 1 минуту до конца лимита приложения",
+            checked = state.limitWarnings,
+            onChange = vm::setLimitWarnings,
+        )
+        ToggleRow(
+            title = "Вечерний итог дня",
+            hint = "Сколько провёл в телефоне, сравнение со вчера и серия. По воскресеньям — итоги недели",
+            checked = state.eveningSummary,
+            onChange = vm::setEveningSummary,
+        )
+        if (state.eveningSummary) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text("Время итога", modifier = Modifier.weight(1f))
+                TextButton(onClick = { vm.setEveningHour((state.eveningHour + 23) % 24) }) { Text("−") }
+                Text("%d:00".format(state.eveningHour), style = MaterialTheme.typography.titleMedium)
+                TextButton(onClick = { vm.setEveningHour((state.eveningHour + 1) % 24) }) { Text("+") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToggleRow(title: String, hint: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.width(8.dp))
+        Switch(checked = checked, onCheckedChange = onChange)
     }
 }
 

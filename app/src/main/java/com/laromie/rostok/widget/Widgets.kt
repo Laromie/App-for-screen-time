@@ -15,6 +15,7 @@ import androidx.core.graphics.createBitmap
 import androidx.core.graphics.drawable.toBitmap
 import com.laromie.rostok.R
 import com.laromie.rostok.data.AppCatalog
+import com.laromie.rostok.data.DayUsage
 import com.laromie.rostok.data.Prefs
 import com.laromie.rostok.data.Prep
 import com.laromie.rostok.data.PrepRepository
@@ -68,7 +69,7 @@ object Widgets {
         val today = if (hasAccess) usage.today() else null
 
         if (screenIds.isNotEmpty()) {
-            val views = screenTimeViews(context, prefs, usage, today?.totalMs, hasAccess)
+            val views = screenTimeViews(context, prefs, usage, today, hasAccess)
             screenIds.forEach { manager.updateAppWidget(it, views) }
         }
         if (topIds.isNotEmpty()) {
@@ -76,7 +77,7 @@ object Widgets {
             topIds.forEach { manager.updateAppWidget(it, views) }
         }
         if (goalIds.isNotEmpty()) {
-            val views = goalsViews(context, prefs, today?.totalMs ?: 0L)
+            val views = goalsViews(context, prefs, today?.let { prefs.goalUsageMs(it) } ?: 0L)
             goalIds.forEach { manager.updateAppWidget(it, views) }
         }
     }
@@ -87,24 +88,26 @@ object Widgets {
         context: Context,
         prefs: Prefs,
         usage: UsageRepository,
-        totalMs: Long?,
+        today: DayUsage?,
         hasAccess: Boolean,
     ): RemoteViews {
         val v = RemoteViews(context.packageName, R.layout.widget_screen_time)
         v.setOnClickPendingIntent(R.id.root, openApp(context, MainActivity.TAB_TODAY))
-        if (!hasAccess || totalMs == null) {
+        if (!hasAccess || today == null) {
             v.setTextViewText(R.id.value, "—")
             v.setTextViewText(R.id.sub, "Открой Росток и дай доступ")
             return v
         }
         val goalMs = prefs.dailyGoalMinutes * TimeUtils.MINUTE
-        val left = goalMs - totalMs
-        v.setTextViewText(R.id.value, compact(totalMs))
+        // Крупно — всё экранное время; кольцо и подпись — то, что идёт в зачёт цели.
+        val usedMs = prefs.goalUsageMs(today)
+        val left = goalMs - usedMs
+        v.setTextViewText(R.id.value, compact(today.totalMs))
         v.setTextViewText(
             R.id.sub,
             if (left >= 0) "ещё ${compact(left)} до цели" else "сверх цели ${compact(-left)}",
         )
-        v.setImageViewBitmap(R.id.ring, ring(totalMs.toFloat() / goalMs))
+        v.setImageViewBitmap(R.id.ring, ring(usedMs.toFloat() / goalMs))
         v.setTextViewText(R.id.emoji, Rewards(prefs, usage).plantStage().emoji)
         return v
     }

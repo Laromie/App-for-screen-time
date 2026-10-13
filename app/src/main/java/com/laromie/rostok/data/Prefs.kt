@@ -131,6 +131,56 @@ class Prefs(context: Context) {
         get() = sp.getString("history", "")!!
         set(value) = sp.edit { putString("history", value) }
 
+    // ---------- Цель дня и уведомления ----------
+
+    /** Считать дневную цель только по отвлекающим приложениям (без карт, звонков, учёбы). */
+    var goalTrackedOnly: Boolean
+        get() = sp.getBoolean("goal_tracked_only", false)
+        set(value) = sp.edit { putBoolean("goal_tracked_only", value) }
+
+    /** Время, которое идёт в зачёт дневной цели. */
+    fun goalUsageMs(day: DayUsage): Long =
+        if (goalTrackedOnly) day.timeForApps(trackedApps) else day.totalMs
+
+    var eveningSummary: Boolean
+        get() = sp.getBoolean("evening_summary", true)
+        set(value) = sp.edit { putBoolean("evening_summary", value) }
+
+    /** Час вечернего итога (0–23). */
+    var eveningHour: Int
+        get() = sp.getInt("evening_hour", 21)
+        set(value) = sp.edit { putInt("evening_hour", value) }
+
+    var limitWarnings: Boolean
+        get() = sp.getBoolean("limit_warnings", true)
+        set(value) = sp.edit { putBoolean("limit_warnings", value) }
+
+    var lastSummaryDay: Long
+        get() = sp.getLong("last_summary_day", 0L)
+        set(value) = sp.edit { putLong("last_summary_day", value) }
+
+    var notificationsAsked: Boolean
+        get() = sp.getBoolean("notifications_asked", false)
+        set(value) = sp.edit { putBoolean("notifications_asked", value) }
+
+    // ---------- История завершённых дней (для сравнения недель) ----------
+
+    /** Минуты экрана по дням: начало дня → минуты. Хранится до 60 дней. */
+    fun dayHistory(): Map<Long, Int> = sp.getString("day_history", "")!!
+        .split(";")
+        .mapNotNull { part ->
+            val (day, min) = part.split(":").takeIf { it.size == 2 } ?: return@mapNotNull null
+            day.toLongOrNull()?.let { d -> min.toIntOrNull()?.let { d to it } }
+        }
+        .toMap()
+
+    fun recordDay(dayStart: Long, minutes: Int) {
+        val updated = (dayHistory() + (dayStart to minutes)).entries
+            .sortedByDescending { it.key }
+            .take(60)
+        sp.edit { putString("day_history", updated.joinToString(";") { "${it.key}:${it.value}" }) }
+    }
+
     var rewardStyle: RewardStyle
         get() = RewardStyle.entries.firstOrNull { it.name == sp.getString("reward_style", null) } ?: RewardStyle.PLANT
         set(value) = sp.edit { putString("reward_style", value.name) }
