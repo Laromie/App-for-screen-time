@@ -221,7 +221,7 @@ private fun PrepDashboard(
                 }
             }
 
-            next != null && activeItem == null -> item { NextExamCard(next, state.prepMinutes[next.id] ?: 0, vm) }
+            next != null && activeItem == null -> item { NextExamCard(next, state.prepMinutes[next.id] ?: 0, state.customFocusMinutes, vm) }
 
             next == null -> item {
                 SectionCard {
@@ -279,7 +279,7 @@ private fun PrepDashboard(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun NextExamCard(item: PrepItem, doneMinutes: Int, vm: MainViewModel) {
+private fun NextExamCard(item: PrepItem, doneMinutes: Int, lastCustom: Int, vm: MainViewModel) {
     val days = Prep.daysUntil(item.date)
     SectionCard(containerColor = MaterialTheme.colorScheme.primaryContainer) {
         Text("Ближайшее: ${item.kind.title.lowercase()}", style = MaterialTheme.typography.labelLarge)
@@ -302,11 +302,11 @@ private fun NextExamCard(item: PrepItem, doneMinutes: Int, vm: MainViewModel) {
         StudyProgress(doneMinutes, item.targetMinutes)
         Spacer(Modifier.height(12.dp))
         Text("Заниматься сейчас:", style = MaterialTheme.typography.labelLarge)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(25, 45, 60, 90).forEach { m ->
-                FilledTonalButton(onClick = { vm.startStudy(item, m) }) { Text("$m мин") }
-            }
-        }
+        DurationButtons(
+            presets = listOf(25, 45, 60, 90),
+            lastCustom = lastCustom,
+            onPick = { m, custom -> vm.startStudy(item, m, custom) },
+        )
         Text(
             "На время занятия соцсети блокируются, время запишется на «${item.name}».",
             style = MaterialTheme.typography.bodySmall,

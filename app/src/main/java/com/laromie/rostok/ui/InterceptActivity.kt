@@ -171,7 +171,7 @@ class InterceptActivity : ComponentActivity() {
                             PauseScreen(
                                 label = label,
                                 pauseSeconds = if (serious) maxOf(prefs.pauseSeconds, SERIOUS_PAUSE_SECONDS) else prefs.pauseSeconds,
-                                openOptions = if (serious) listOf(SERIOUS_UNLOCK_MINUTES) else listOf(2, 5, 15),
+                                openOptions = if (serious) listOf(SERIOUS_UNLOCK_MINUTES) else listOf(5, 10, 15, 20),
                                 hint = hint,
                                 loadStats = {
                                     withContext(Dispatchers.IO) {

@@ -68,6 +68,11 @@ class Prefs(context: Context) {
 
     fun isFocusActive(now: Long = System.currentTimeMillis()) = focusUntil > now
 
+    /** Последняя своя длительность фокуса или занятия — с неё начинается ползунок. */
+    var customFocusMinutes: Int
+        get() = sp.getInt("custom_focus_minutes", 40)
+        set(value) = sp.edit { putInt("custom_focus_minutes", value) }
+
     // ---------- Награды ----------
 
     var points: Int

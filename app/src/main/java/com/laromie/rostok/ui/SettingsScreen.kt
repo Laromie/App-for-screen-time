@@ -99,11 +99,11 @@ private fun FocusCard(state: UiState, vm: MainViewModel) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(25, 50, 90).forEach { m ->
-                    FilledTonalButton(onClick = { vm.startFocus(m) }) { Text("$m мин") }
-                }
-            }
+            DurationButtons(
+                presets = listOf(25, 50, 90),
+                lastCustom = state.customFocusMinutes,
+                onPick = { m, custom -> vm.startFocus(m, custom) },
+            )
         }
     }
 }

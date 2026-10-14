@@ -67,6 +67,7 @@ data class UiState(
     val dayMinutes: Map<Long, Int> = emptyMap(),
     val dayGoalMinutes: Map<Long, Int> = emptyMap(),
     val studyByDay: Map<Long, Int> = emptyMap(),
+    val customFocusMinutes: Int = 40,
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -160,6 +161,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 .associate { it.dayStart to (it.totalMs / TimeUtils.MINUTE).toInt() },
             dayGoalMinutes = prefs.dayGoalHistory() + week.filter { it.totalMs > 0 }
                 .associate { it.dayStart to (prefs.goalUsageMs(it) / TimeUtils.MINUTE).toInt() },
+            customFocusMinutes = prefs.customFocusMinutes,
             studyByDay = prepRepo.sessions()
                 .groupBy { TimeUtils.startOfDay(it.start) }
                 .mapValues { (_, list) -> list.sumOf { it.minutes } },
@@ -220,7 +222,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         refreshPrefs()
     }
 
-    fun startFocus(minutes: Int) {
+    fun startFocus(minutes: Int, custom: Boolean = false) {
+        if (custom) prefs.customFocusMinutes = minutes
         rewards.startFocus(minutes)
         refreshPrefs()
     }
@@ -255,7 +258,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         refreshPrefs()
     }
 
-    fun startStudy(item: PrepItem, minutes: Int) {
+    fun startStudy(item: PrepItem, minutes: Int, custom: Boolean = false) {
+        if (custom) prefs.customFocusMinutes = minutes
         study.start(item, minutes)
         refreshPrefs()
     }
