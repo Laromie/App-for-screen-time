@@ -31,12 +31,35 @@
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
-            android:launchMode="singleTop">
+            android:launchMode="singleTop" />
+
+        <!-- Два входа в приложение с разными иконками: переключаются в Настройках → Оформление.
+             Включён всегда ровно один. -->
+        <activity-alias
+            android:name=".LauncherDefault"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round"
+            android:targetActivity=".ui.MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".LauncherGlass"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_glass"
+            android:roundIcon="@mipmap/ic_launcher_glass_round"
+            android:targetActivity=".ui.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <activity
             android:name=".ui.RecapActivity"

@@ -10,10 +10,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.FilterChip
@@ -22,10 +24,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -106,6 +113,27 @@ fun AppearanceCard(state: UiState, vm: MainViewModel) {
             }
         }
 
+        Label("Иконка приложения")
+        var launcherIcon by remember { mutableStateOf(AppIconSwitcher.current(context)) }
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            LauncherIcon.entries.forEach { icon ->
+                IconChoice(
+                    icon = icon,
+                    selected = launcherIcon == icon,
+                    onClick = {
+                        AppIconSwitcher.set(context, icon)
+                        launcherIcon = icon
+                    },
+                )
+            }
+        }
+        Text(
+            "Иконка на рабочем столе обновится через несколько секунд. На некоторых телефонах её нужно " +
+                "заново вынести на рабочий стол из списка приложений.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
         Label("Кого растить за очки")
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             RewardStyle.entries.forEach { r ->
@@ -158,5 +186,42 @@ private fun ColorDot(color: Color, selected: Boolean, onClick: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         if (selected) Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White)
+    }
+}
+
+/** Превью иконки на «обоях» — серый градиент, чтобы было видно прозрачность стеклянной версии. */
+@Composable
+private fun IconChoice(icon: LauncherIcon, selected: Boolean, onClick: () -> Unit) {
+    val context = LocalContext.current
+    val drawable = remember(icon) { context.getDrawable(icon.preview) }
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clip(MaterialTheme.shapes.medium)
+            .clickable(onClick = onClick)
+            .padding(4.dp),
+    ) {
+        Box(
+            Modifier
+                .size(84.dp)
+                .clip(MaterialTheme.shapes.medium)
+                .background(Brush.linearGradient(listOf(Color(0xFF9A9A9A), Color(0xFF5E5E5E))))
+                .border(
+                    width = if (selected) 3.dp else 0.dp,
+                    color = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                    shape = MaterialTheme.shapes.medium,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(Modifier.size(56.dp).clip(RoundedCornerShape(16.dp))) {
+                AppIcon(drawable, size = 56.dp)
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            icon.title,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+        )
     }
 }
